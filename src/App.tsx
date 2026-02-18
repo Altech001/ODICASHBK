@@ -12,6 +12,8 @@ import BusinessSettingsPage from "./components/BusinessSettingsPage";
 import AuthLayout from "./components/auth/AuthLayout";
 import Login from "./pages/auth/Login";
 import SignUp from "./pages/auth/SignUp";
+import ForgotPass from "./pages/auth/ForgotPass";
+import ResetPassword from "./pages/auth/ResetPassword";
 import NotFound from "./pages/NotFound";
 import ProtectedRoute from "./components/auth/ProtectedRoute";
 
@@ -27,6 +29,8 @@ const App = () => (
           <Route element={<AuthLayout />}>
             <Route path="/login" element={<Login />} />
             <Route path="/signup" element={<SignUp />} />
+            <Route path="/forgot-password" element={<ForgotPass />} />
+            <Route path="/reset-password" element={<ResetPassword />} />
           </Route>
 
           <Route element={<ProtectedRoute />}>
