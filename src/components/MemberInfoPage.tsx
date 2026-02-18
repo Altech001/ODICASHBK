@@ -1,17 +1,28 @@
 import { ArrowLeft, Mail, IdCard, Phone, ChevronDown, ChevronUp, Info, Check, BookText, Users } from 'lucide-react';
 import { useState } from 'react';
 import { cn } from '@/lib/utils';
-import { TeamMember, CashBook } from '@/store/useAppStore';
+import { Cashbook } from '@/hooks/useCashbooks';
 
 interface MemberInfoPageProps {
-    member: TeamMember;
-    books: CashBook[];
+    member: {
+        id: string;
+        name: string;
+        email: string;
+        role: string;
+        avatar: string;
+        joinedAt?: string;
+    };
+    books: Cashbook[];
     onBack: () => void;
 }
 
 const MemberInfoPage = ({ member, books, onBack }: MemberInfoPageProps) => {
     const [permissionsOpen, setPermissionsOpen] = useState(false);
     const [booksOpen, setBooksOpen] = useState(false);
+
+    // Map backend roles to UI roles
+    const displayRole = member.role === 'OWNER' ? 'Primary Admin' :
+        member.role === 'ADMIN' ? 'Admin' : 'Employee';
 
     // Mocked role data based on RolesPermissionsPanel
     const roleData = {
@@ -47,7 +58,11 @@ const MemberInfoPage = ({ member, books, onBack }: MemberInfoPageProps) => {
         }
     };
 
-    const currentRole = roleData[member.role] || roleData['Employee'];
+    const currentRole = roleData[displayRole] || roleData['Employee'];
+
+    const formattedJoinedDate = member.joinedAt
+        ? new Date(member.joinedAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
+        : 'Recently';
 
     return (
         <div className="flex-1 bg-white min-h-screen flex flex-col">
@@ -59,7 +74,7 @@ const MemberInfoPage = ({ member, books, onBack }: MemberInfoPageProps) => {
                 >
                     <ArrowLeft className="w-5 h-5 text-slate-600 stroke-[2.5px]" />
                 </button>
-                <h1 className="text-[12px] font-medium text-slate-800">{member.role} Info</h1>
+                <h1 className="text-[12px] font-medium text-slate-800">{displayRole} Info</h1>
             </div>
 
             <div className="p-6 max-w-2xl space-y-4">
@@ -68,23 +83,23 @@ const MemberInfoPage = ({ member, books, onBack }: MemberInfoPageProps) => {
                     <div className="flex items-start justify-between mb-6">
                         <div className="flex items-center gap-6">
                             <div className={cn(
-                                'w-12 h-12 rounded-full flex items-center justify-center text-[20px]  border-2',
+                                'w-12 h-12 rounded-full flex items-center justify-center text-[20px] font-bold border-2',
                                 member.avatar === 'A' ? 'bg-[#f1f5f9] text-[#64748b] border-[#e2e8f0]' : 'bg-[#fff1f2] text-[#e11d48] border-[#ffe4e6]'
                             )}>
                                 {member.avatar}
                             </div>
                             <div>
-                                <h2 className="text-[14px]  text-slate-800">{member.name}</h2>
-                                <p className="text-[12px] text-slate-400 font-medium mt-1">Member since 11 Feb 2026</p>
+                                <h2 className="text-[14px] font-bold text-slate-800">{member.name}</h2>
+                                <p className="text-[12px] text-slate-400 font-medium mt-1">Member since {formattedJoinedDate}</p>
                             </div>
                         </div>
                         <span className={cn(
-                            'text-[10px]  px-3 py-1 rounded border uppercase ',
-                            member.role === 'Primary Admin' ? 'text-[#10b981] bg-[#ecfdf5] border-[#d1fae5]' :
-                                member.role === 'Admin' ? 'text-[#f59e0b] bg-[#fff7ed] border-[#ffedd5]' :
+                            'text-[10px] font-bold px-3 py-1 rounded border uppercase tracking-wider',
+                            member.role === 'OWNER' ? 'text-[#10b981] bg-[#ecfdf5] border-[#d1fae5]' :
+                                member.role === 'ADMIN' ? 'text-[#f59e0b] bg-[#fff7ed] border-[#ffedd5]' :
                                     'text-[#4361ee] bg-[#eef2ff] border-[#e0e7ff]'
                         )}>
-                            {member.role}
+                            {displayRole}
                         </span>
                     </div>
 
@@ -94,8 +109,8 @@ const MemberInfoPage = ({ member, books, onBack }: MemberInfoPageProps) => {
                                 <Mail className="w-5 h-5 text-slate-400" />
                             </div>
                             <div>
-                                <p className="text-[12px] text-slate-400  uppercase  mb-1">Email Address</p>
-                                <p className="text-[14px] text-slate-700 ">{member.email}</p>
+                                <p className="text-[12px] text-slate-400  uppercase font-bold mb-1">Email Address</p>
+                                <p className="text-[14px] text-slate-700 font-medium">{member.email}</p>
                             </div>
                         </div>
 
@@ -104,8 +119,8 @@ const MemberInfoPage = ({ member, books, onBack }: MemberInfoPageProps) => {
                                 <IdCard className="w-5 h-5 text-slate-400" />
                             </div>
                             <div>
-                                <p className="text-[12px] text-slate-400  uppercase  mb-1">Employee ID</p>
-                                <button className="text-[14px] text-[#4361ee]  hover:underline">Add Employee ID</button>
+                                <p className="text-[12px] text-slate-400  uppercase font-bold mb-1">Employee ID</p>
+                                <button className="text-[14px] text-[#4361ee] font-medium hover:underline">Add Employee ID</button>
                             </div>
                         </div>
                     </div>
@@ -122,8 +137,8 @@ const MemberInfoPage = ({ member, books, onBack }: MemberInfoPageProps) => {
                                 <Users className="w-5 h-5 text-[#4361ee]" />
                             </div>
                             <div>
-                                <h3 className="text-[15px]  text-slate-800">{member.role} Permission</h3>
-                                <p className="text-[12px] text-slate-400 font-medium mt-0.5">List of actions {member.role} can take</p>
+                                <h3 className="text-[15px] font-bold text-slate-800">{displayRole} Permission</h3>
+                                <p className="text-[12px] text-slate-400 font-medium mt-0.5">List of actions {displayRole} can take</p>
                             </div>
                         </div>
                         {permissionsOpen ? <ChevronUp className="w-5 h-5 text-slate-400" /> : <ChevronDown className="w-5 h-5 text-slate-400" />}
@@ -138,7 +153,7 @@ const MemberInfoPage = ({ member, books, onBack }: MemberInfoPageProps) => {
                                     <div className="w-5 h-5 rounded-full bg-[#4361ee] flex items-center justify-center shrink-0 mt-0.5">
                                         <Info className="w-3 h-3 text-white" />
                                     </div>
-                                    <p className="text-[13px] text-slate-600 ">{currentRole.info}</p>
+                                    <p className="text-[13px] text-slate-600 font-medium leading-relaxed">{currentRole.info}</p>
                                 </div>
                             )}
 
@@ -168,7 +183,7 @@ const MemberInfoPage = ({ member, books, onBack }: MemberInfoPageProps) => {
                                 <BookText className="w-5 h-5 text-[#4361ee]" />
                             </div>
                             <div>
-                                <h3 className="text-[15px]  text-slate-800">Books ({books.length})</h3>
+                                <h3 className="text-[15px] font-bold text-slate-800">Books ({books.length})</h3>
                                 <p className="text-[12px] text-slate-400 font-medium mt-0.5">List of assigned books</p>
                             </div>
                         </div>
@@ -178,17 +193,23 @@ const MemberInfoPage = ({ member, books, onBack }: MemberInfoPageProps) => {
                     {booksOpen && (
                         <div className="p-6 pt-0 divide-y divide-slate-50">
                             <div className="h-[1px] bg-slate-100 mb-2" />
-                            {books.map((book) => (
-                                <div key={book.id} className="flex items-center gap-4 py-4 first:pt-2">
-                                    <div className="w-10 h-10 rounded-full bg-slate-50 border border-slate-100 flex items-center justify-center">
-                                        <BookText className="w-5 h-5 text-slate-400" />
+                            {books.length > 0 ? (
+                                books.map((book) => (
+                                    <div key={book.id} className="flex items-center gap-4 py-4 first:pt-2">
+                                        <div className="w-10 h-10 rounded-full bg-slate-50 border border-slate-100 flex items-center justify-center">
+                                            <BookText className="w-5 h-5 text-slate-400" />
+                                        </div>
+                                        <div>
+                                            <p className="text-[15px] font-bold text-slate-800">{book.name}</p>
+                                            <p className="text-[12px] text-slate-400 font-medium">
+                                                {displayRole === 'Primary Admin' || displayRole === 'Admin' ? 'Full Access' : 'View & Manage'}
+                                            </p>
+                                        </div>
                                     </div>
-                                    <div>
-                                        <p className="text-[15px]  text-slate-800">{book.name}</p>
-                                        <p className="text-[12px] text-slate-400 ">Full Access</p>
-                                    </div>
-                                </div>
-                            ))}
+                                ))
+                            ) : (
+                                <p className="py-8 text-center text-[13px] text-slate-400 italic font-medium">No books assigned to this member yet.</p>
+                            )}
                         </div>
                     )}
                 </div>

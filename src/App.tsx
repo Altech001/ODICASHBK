@@ -9,10 +9,11 @@ import BookDetailPage from "./components/BookDetailPage";
 import BookSettingsPage from "./components/BookSettingsPage";
 import TeamPage from "./components/TeamPage";
 import BusinessSettingsPage from "./components/BusinessSettingsPage";
-import AuthLoayout from "./components/auth/AuthLoayout";
+import AuthLayout from "./components/auth/AuthLayout";
 import Login from "./pages/auth/Login";
 import SignUp from "./pages/auth/SignUp";
 import NotFound from "./pages/NotFound";
+import ProtectedRoute from "./components/auth/ProtectedRoute";
 
 const queryClient = new QueryClient();
 
@@ -21,22 +22,25 @@ const App = () => (
     <TooltipProvider>
       <Toaster />
       <Sonner />
-      <BrowserRouter>
+      <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
         <Routes>
-          <Route element={<AuthLoayout />}>
+          <Route element={<AuthLayout />}>
             <Route path="/login" element={<Login />} />
             <Route path="/signup" element={<SignUp />} />
           </Route>
 
-          <Route element={<AppLayout />}>
-            <Route index element={<Navigate to="/cashbooks" replace />} />
-            <Route path="/cashbooks" element={<CashbooksPage />} />
-            <Route path="/cashbooks/:bookId" element={<BookDetailPage />} />
-            <Route path="/cashbooks/:bookId/settings" element={<BookSettingsPage />} />
-            <Route path="/team" element={<TeamPage />} />
-            <Route path="/settings" element={<BusinessSettingsPage />} />
+          <Route element={<ProtectedRoute />}>
+            <Route element={<AppLayout />}>
+              <Route index element={<Navigate to="/cashbooks" replace />} />
+              <Route path="/cashbooks" element={<CashbooksPage />} />
+              <Route path="/cashbooks/:bookId" element={<BookDetailPage />} />
+              <Route path="/cashbooks/:bookId/settings" element={<BookSettingsPage />} />
+              <Route path="/team" element={<TeamPage />} />
+              <Route path="/settings" element={<BusinessSettingsPage />} />
+            </Route>
           </Route>
-          <Route path="*" element={<Navigate to="/login" replace />} />
+
+          <Route path="*" element={<NotFound />} />
         </Routes>
       </BrowserRouter>
     </TooltipProvider>

@@ -1,6 +1,6 @@
 import { Outlet } from "react-router-dom";
 
-const AuthLoayout = () => {
+const AuthLayout = () => {
     return (
         <div className="flex min-h-screen w-full overflow-hidden bg-white">
             {/* Left Side - Illustration */}
@@ -59,4 +59,4 @@ const AuthLoayout = () => {
     );
 };
 
-export default AuthLoayout;
+export default AuthLayout;

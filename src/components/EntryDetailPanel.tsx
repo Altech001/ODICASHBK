@@ -1,44 +1,48 @@
-import { X, Plus, Minus, Trash2, Pencil, ChevronDown, ChevronUp, ArrowRightLeft, Copy } from 'lucide-react';
-import { useAppStore, CashEntry } from '@/store/useAppStore';
+import { X, Plus, Minus, Trash2, Pencil, ChevronUp } from 'lucide-react';
 import { useState } from 'react';
 import { cn } from '@/lib/utils';
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { apiClient } from '@/api/client';
+import { toast } from 'sonner';
+import { Entry } from '@/hooks/useEntries';
 
 interface EntryDetailPanelProps {
-  entry: CashEntry;
+  entry: Entry;
   bookId: string;
   onClose: () => void;
 }
 
 const EntryDetailPanel = ({ entry, bookId, onClose }: EntryDetailPanelProps) => {
-  const { deleteEntry, books, moveEntry, copyEntry, copyOppositeEntry } = useAppStore();
-  const [moreActionsOpen, setMoreActionsOpen] = useState(false);
-  const [transferType, setTransferType] = useState<'move' | 'copy' | 'opposite' | null>(null);
-  const [targetBookId, setTargetBookId] = useState('');
+  const queryClient = useQueryClient();
+  const [isDeleting, setIsDeleting] = useState(false);
 
-  const otherBooks = books.filter((b) => b.id !== bookId);
+  const deleteMutation = useMutation({
+    mutationFn: async () => {
+      // Backend requires a reason for deletion
+      return await apiClient.delete(`/entries/${entry.id}/cashbook/${bookId}`, {
+        data: { reason: 'User requested deletion' }
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['entries', bookId] });
+      toast.success('Entry deleted successfully');
+      onClose();
+    },
+    onError: (error: any) => {
+      toast.error(error.response?.data?.message || 'Failed to delete entry');
+      setIsDeleting(false);
+    }
+  });
 
-  const handleTransfer = () => {
-    if (!targetBookId || !transferType) return;
-    if (transferType === 'move') moveEntry(bookId, targetBookId, entry.id);
-    if (transferType === 'copy') copyEntry(bookId, targetBookId, entry.id);
-    if (transferType === 'opposite') copyOppositeEntry(bookId, targetBookId, entry.id);
-    setTransferType(null);
-    setTargetBookId('');
-    setMoreActionsOpen(false);
+  const handleDelete = () => {
+    if (window.confirm('Are you sure you want to delete this entry?')) {
+      setIsDeleting(true);
+      deleteMutation.mutate();
+    }
   };
+
+  const amount = parseFloat(entry.amount);
+  const isIn = entry.type === 'INCOME';
 
   return (
     <>
@@ -58,31 +62,43 @@ const EntryDetailPanel = ({ entry, bookId, onClose }: EntryDetailPanelProps) => 
           <div className="border-b border-border pb-4 mb-4">
             <div className="flex items-center justify-between mb-1">
               <div className="flex items-center gap-1">
-                {entry.type === 'in' ? (
-                  <Plus className="w-4 h-4 text-cash-in" />
+                {isIn ? (
+                  <Plus className="w-4 h-4 text-emerald-600" />
                 ) : (
-                  <Minus className="w-4 h-4 text-cash-out" />
+                  <Minus className="w-4 h-4 text-red-600" />
                 )}
-                <span className={cn('text-sm font-medium', entry.type === 'in' ? 'text-cash-in' : 'text-cash-out')}>
-                  Cash {entry.type === 'in' ? 'In' : 'Out'}
+                <span className={cn('text-sm font-medium', isIn ? 'text-emerald-600' : 'text-red-600')}>
+                  Cash {isIn ? 'In' : 'Out'}
                 </span>
               </div>
-              <span className="text-xs text-muted-foreground">On {entry.date}, {entry.time}</span>
+              <span className="text-xs text-muted-foreground">
+                {new Date(entry.entryDate).toLocaleString()}
+              </span>
             </div>
-            <p className={cn('text-2xl font-bold', entry.type === 'in' ? 'text-cash-in' : 'text-cash-out')}>
-              {entry.amount.toLocaleString()}
+            <p className={cn('text-2xl font-bold', isIn ? 'text-emerald-600' : 'text-slate-800')}>
+              {amount.toLocaleString()}
             </p>
           </div>
 
-          {/* Contact info */}
+          {/* Details */}
           <div className="border-b border-border pb-4 mb-4">
-            <p className="text-xs text-muted-foreground mb-1">Contact Name</p>
-            <p className="text-sm font-medium text-foreground">
-              {entry.contactName} <span className="text-muted-foreground">({entry.contactType.toLowerCase()})</span>
-            </p>
-            <div className="flex gap-2 mt-2">
-              <span className="text-xs border border-primary/30 text-primary rounded px-2 py-0.5">{entry.category}</span>
-              <span className="text-xs border border-primary/30 text-primary rounded px-2 py-0.5">{entry.mode}</span>
+            <p className="text-xs text-muted-foreground mb-1">Description</p>
+            <p className="text-sm font-medium text-foreground">{entry.description}</p>
+
+            {entry.contact && (
+              <div className="mt-3">
+                <p className="text-xs text-muted-foreground mb-1">Contact</p>
+                <p className="text-sm font-medium text-foreground">{entry.contact.name}</p>
+              </div>
+            )}
+
+            <div className="flex gap-2 mt-4">
+              {entry.category && (
+                <span className="text-xs border border-primary/30 text-primary rounded px-2 py-0.5">{entry.category.name}</span>
+              )}
+              {entry.paymentMode && (
+                <span className="text-xs border border-primary/30 text-primary rounded px-2 py-0.5">{entry.paymentMode.name}</span>
+              )}
             </div>
           </div>
 
@@ -94,8 +110,8 @@ const EntryDetailPanel = ({ entry, bookId, onClose }: EntryDetailPanelProps) => 
                 <Plus className="w-3 h-3 text-muted-foreground" />
               </div>
               <div>
-                <p className="text-sm text-foreground">Created by <span className="font-medium">{entry.createdBy}</span></p>
-                <p className="text-xs text-muted-foreground">On {entry.date}, {entry.time}</p>
+                <p className="text-sm text-foreground">Created by <span className="font-medium">{entry.createdBy?.firstName || 'Unknown'} {entry.createdBy?.lastName || ''}</span></p>
+                <p className="text-xs text-muted-foreground">{new Date(entry.createdAt).toLocaleString()}</p>
               </div>
             </div>
           </div>
@@ -104,14 +120,14 @@ const EntryDetailPanel = ({ entry, bookId, onClose }: EntryDetailPanelProps) => 
         {/* Footer actions */}
         <div className="p-4 border-t border-border flex items-center gap-2">
           <button
-            onClick={() => { deleteEntry(bookId, entry.id); onClose(); }}
-            className="flex items-center gap-1 text-sm text-cash-out hover:bg-accent rounded-md px-3 py-2"
+            onClick={handleDelete}
+            disabled={isDeleting}
+            className="flex items-center gap-1 text-sm text-red-600 hover:bg-red-50 rounded-md px-3 py-2"
           >
             <Trash2 className="w-4 h-4" />
-            Delete
+            {isDeleting ? 'Deleting...' : 'Delete'}
           </button>
           <button
-            onClick={() => setMoreActionsOpen(true)}
             className="flex items-center gap-1 text-sm text-foreground border border-border hover:bg-accent rounded-md px-3 py-2 ml-auto"
           >
             More Actions
@@ -123,73 +139,6 @@ const EntryDetailPanel = ({ entry, bookId, onClose }: EntryDetailPanelProps) => 
           </button>
         </div>
       </div>
-
-      {/* More Actions Dialog */}
-      <Dialog open={moreActionsOpen} onOpenChange={setMoreActionsOpen}>
-        <DialogContent className="sm:max-w-[420px]">
-          <DialogHeader>
-            <DialogTitle>More Actions</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-1">
-            <p className="text-sm font-medium text-foreground px-2 py-2 bg-muted rounded-md mb-2">Transfer Entry</p>
-
-            <button
-              onClick={() => setTransferType('move')}
-              className={cn('w-full flex items-start gap-3 p-3 rounded-md hover:bg-accent text-left', transferType === 'move' && 'bg-accent')}
-            >
-              <ArrowRightLeft className="w-5 h-5 text-muted-foreground mt-0.5" />
-              <div>
-                <p className="text-sm font-medium text-foreground">Move Entry</p>
-                <p className="text-xs text-muted-foreground">Entry will be moved to the other selected book</p>
-              </div>
-            </button>
-
-            <button
-              onClick={() => setTransferType('copy')}
-              className={cn('w-full flex items-start gap-3 p-3 rounded-md hover:bg-accent text-left', transferType === 'copy' && 'bg-accent')}
-            >
-              <Copy className="w-5 h-5 text-muted-foreground mt-0.5" />
-              <div>
-                <p className="text-sm font-medium text-foreground">Copy Entry</p>
-                <p className="text-xs text-muted-foreground">Entry will stay in both books</p>
-              </div>
-            </button>
-
-            <button
-              onClick={() => setTransferType('opposite')}
-              className={cn('w-full flex items-start gap-3 p-3 rounded-md hover:bg-accent text-left', transferType === 'opposite' && 'bg-accent')}
-            >
-              <Plus className="w-5 h-5 text-muted-foreground mt-0.5" />
-              <div>
-                <p className="text-sm font-medium text-foreground">Copy Opposite Entry</p>
-                <p className="text-xs text-muted-foreground">Cash In entry will be added as Cash out entry in other book and vice versa</p>
-              </div>
-            </button>
-
-            {transferType && otherBooks.length > 0 && (
-              <div className="pt-3 space-y-2">
-                <Select value={targetBookId} onValueChange={setTargetBookId}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select target book" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {otherBooks.map((b) => (
-                      <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <button
-                  onClick={handleTransfer}
-                  disabled={!targetBookId}
-                  className="w-full bg-primary text-primary-foreground rounded-md py-2 text-sm font-medium hover:opacity-90 disabled:opacity-50"
-                >
-                  Confirm
-                </button>
-              </div>
-            )}
-          </div>
-        </DialogContent>
-      </Dialog>
     </>
   );
 };

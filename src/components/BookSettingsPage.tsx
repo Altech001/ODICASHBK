@@ -1,9 +1,16 @@
-import { ArrowLeft, Pencil, Copy, Trash2, UserPlus, ChevronRight, Calendar, EyeOff, Eye } from 'lucide-react';
-import { useAppStore } from '@/store/useAppStore';
+import { ArrowLeft, Pencil, Copy, Trash2, UserPlus, ChevronRight, Calendar, EyeOff, Eye, Loader2, Plus, Settings2, ShieldCheck, UserCog } from 'lucide-react';
+import { useAuthStore } from '@/store/useAuthStore';
+import { useCashbooks, useCashbook, useCashbookMembers } from '@/hooks/useCashbooks';
+import { useWorkspaces } from '@/hooks/useWorkspaces';
+import { useMetadata } from '@/hooks/useMetadata';
+import { useContacts } from '@/hooks/useContacts';
 import AddMemberPanel from './AddMemberPanel';
 import { useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { cn } from '@/lib/utils';
+import { toast } from 'sonner';
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Badge } from "@/components/ui/badge";
 import {
   Dialog,
   DialogContent,
@@ -26,15 +33,27 @@ type SettingsTab = 'members' | 'entry-field' | 'data-operator';
 const BookSettingsPage = () => {
   const { bookId } = useParams<{ bookId: string }>();
   const navigate = useNavigate();
-  const { books, teamMembers, renameBook, duplicateBook, deleteBook, updateEntryFields, updateDataOperatorRole, businesses, activeBusinessId } = useAppStore();
-  const book = books.find((b) => b.id === bookId);
-  const business = businesses.find((b) => b.id === activeBusinessId);
+  const { data: book, isLoading: isLoadingBook } = useCashbook(bookId || '');
+  const { data: members, isLoading: isLoadingMembers } = useCashbookMembers(bookId || '');
+  const { workspaces, isLoading: isLoadingWorkspaces } = useWorkspaces();
+  const { updateCashbook, deleteCashbook, createCashbook } = useCashbooks(book?.workspaceId || '');
 
   const [activeTab, setActiveTab] = useState<SettingsTab>('members');
   const [renameDialogOpen, setRenameDialogOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [showAddMemberPanel, setShowAddMemberPanel] = useState(false);
-  const [newBookName, setNewBookName] = useState(book?.name || '');
+  const [newBookName, setNewBookName] = useState('');
+
+  if (isLoadingBook || isLoadingWorkspaces || isLoadingMembers) {
+    return (
+      <div className="flex-1 flex items-center justify-center bg-[#fbfcfd]">
+        <div className="flex flex-col items-center gap-4">
+          <Loader2 className="w-8 h-8 animate-spin text-[#4361ee]" />
+          <p className="text-[13px] text-slate-500 font-medium">Loading settings...</p>
+        </div>
+      </div>
+    );
+  }
 
   if (!book) {
     return (
@@ -45,20 +64,37 @@ const BookSettingsPage = () => {
   }
 
   const handleRename = () => {
-    if (newBookName.trim()) {
-      renameBook(book.id, newBookName.trim());
-      setRenameDialogOpen(false);
+    if (newBookName.trim() && book) {
+      updateCashbook({ id: book.id, name: newBookName.trim() }, {
+        onSuccess: () => {
+          toast.success('Book renamed');
+          setRenameDialogOpen(false);
+        },
+        onError: () => toast.error('Failed to rename book')
+      });
     }
   };
 
   const handleDuplicate = () => {
-    duplicateBook(book.id);
-    navigate('/cashbooks');
+    if (!book) return;
+    createCashbook(`${book.name} (Copy)`, {
+      onSuccess: () => {
+        toast.success('Book duplicated');
+        navigate('/cashbooks');
+      },
+      onError: () => toast.error('Failed to duplicate book')
+    });
   };
 
   const handleDelete = () => {
-    deleteBook(book.id);
-    navigate('/cashbooks');
+    if (!book) return;
+    deleteCashbook(book.id, {
+      onSuccess: () => {
+        toast.success('Book deleted');
+        navigate('/cashbooks');
+      },
+      onError: () => toast.error('Failed to delete book')
+    });
   };
 
   const tabs: { id: SettingsTab; label: string; subtitle: string; badge?: boolean }[] = [
@@ -121,16 +157,16 @@ const BookSettingsPage = () => {
         </div>
 
         {/* Content */}
-        <div className="flex-1 p-6">
+        <div className="flex-1 p-6 overflow-y-auto">
           {activeTab === 'members' && (
             <MembersTab
-              bookName={book.name}
-              teamMembers={teamMembers}
+              bookId={bookId || ''}
+              members={members || []}
               onOpenAddMember={() => setShowAddMemberPanel(true)}
             />
           )}
-          {activeTab === 'entry-field' && <EntryFieldTab book={book} updateEntryFields={updateEntryFields} />}
-          {activeTab === 'data-operator' && <DataOperatorTab book={book} updateDataOperatorRole={updateDataOperatorRole} />}
+          {activeTab === 'entry-field' && <EntryFieldTab workspaceId={book?.workspaceId || ''} />}
+          {activeTab === 'data-operator' && <DataOperatorTab book={book} onUpdate={(data) => updateCashbook({ id: book.id, ...data })} />}
         </div>
       </div>
 
@@ -179,7 +215,7 @@ const BookSettingsPage = () => {
 
       {showAddMemberPanel && (
         <AddMemberPanel
-          businessName={business?.name || 'Business'}
+          businessName={workspaces.find(w => w.id === book.workspaceId)?.name || 'Business'}
           onClose={() => setShowAddMemberPanel(false)}
           onAddMember={(email) => {
             console.log('Add member:', email);
@@ -192,17 +228,36 @@ const BookSettingsPage = () => {
 };
 
 /* Members Tab */
-const MembersTab = ({ bookName, teamMembers, onOpenAddMember }: { bookName: string; teamMembers: any[]; onOpenAddMember: () => void }) => {
+const MembersTab = ({ bookId, members, onOpenAddMember }: { bookId: string; members: any[]; onOpenAddMember: () => void }) => {
+  const { updateMemberRole, removeMember } = useCashbooks();
+
   const roleColors: Record<string, string> = {
-    'Primary Admin': 'text-[#10b981] bg-[#ecfdf5]',
-    Admin: 'text-[#f59e0b] bg-[#fff7ed]',
-    Employee: 'text-slate-500 bg-slate-50',
+    'PRIMARY_ADMIN': 'text-[#10b981] bg-[#ecfdf5] border-[#d1fae5]',
+    'ADMIN': 'text-[#f59e0b] bg-[#fff7ed] border-[#ffedd5]',
+    'BOOK_ADMIN': 'text-[#4361ee] bg-[#eef2ff] border-[#e0e7ff]',
+    'DATA_OPERATOR': 'text-slate-500 bg-slate-50 border-slate-200',
+    'VIEWER': 'text-slate-400 bg-slate-50 border-slate-100',
+  };
+
+  const handleRoleChange = (userId: string, newRole: string) => {
+    updateMemberRole({ id: bookId, userId, role: newRole }, {
+      onSuccess: () => toast.success('Role updated'),
+      onError: (err: any) => toast.error(err.response?.data?.message || 'Failed to update role')
+    });
+  };
+
+  const handleRemoveMember = (userId: string, name: string) => {
+    if (!confirm(`Are you sure you want to remove ${name} from this book?`)) return;
+    removeMember({ id: bookId, userId }, {
+      onSuccess: () => toast.success('Member removed'),
+      onError: (err: any) => toast.error(err.response?.data?.message || 'Failed to remove member')
+    });
   };
 
   return (
     <div className="max-w-3xl">
       {/* Add Members card */}
-      <div className="bg-white border border-slate-200 rounded-lg p-6 mb-8 flex items-center justify-between ">
+      <div className="bg-white border border-slate-200 rounded p-6 mb-8 flex items-center justify-between">
         <div className="max-w-[320px]">
           <h3 className="text-[15px] font-semibold text-slate-800 mb-2">Add Members</h3>
           <p className="text-[12px] text-slate-500 leading-relaxed font-medium">Manage your cashflow together with your business admins, family or friends by adding them as members</p>
@@ -215,32 +270,61 @@ const MembersTab = ({ bookName, teamMembers, onOpenAddMember }: { bookName: stri
         </button>
       </div>
 
-      {/* Members list header */}
       <div className="flex items-center justify-between mb-8">
-        <h3 className="text-[14px] font-bold text-slate-800">Total Members ({teamMembers.length})</h3>
+        <h3 className="text-[14px] font-bold text-slate-800">Total Members ({members.length})</h3>
         <button className="text-[12px] text-[#4361ee] font-bold flex items-center gap-1 px-2 py-1 hover:bg-blue-50 rounded transition-all">
           View roles & permissions <ChevronRight className="w-4 h-4 stroke-[2.5px]" />
         </button>
       </div>
 
-      <p className="text-[12px] text-slate-400 font-bold mb-2">Members in this book</p>
+      <p className="text-[12px] text-slate-400 font-bold mb-4 uppercase tracking-wider flex items-center gap-2">
+        <ShieldCheck className="w-4 h-4" />
+        Members in this book
+      </p>
 
-      <div className="space-y-6">
-        {teamMembers.map((member) => (
-          <div key={member.id} className="flex items-center gap-4 py-4 border-b border-slate-300 last:border-b-0 hover:bg-slate-50/50 -mx-2 px-2 rounded-none transition-colors">
-            <div className={cn(
-              'w-12 h-12 rounded-full flex items-center justify-center text-[16px] font-bold border-2',
-              member.avatar === 'A' ? 'bg-[#f1f5f9] text-[#64748b] border-green-200' : 'bg-[#fff1f2] text-[#e11d48] border-white'
-            )}>
-              {member.avatar}
-            </div>
+      <div className="space-y-4">
+        {members.map((member) => (
+          <div key={member.userId} className="flex items-center gap-4 py-4 border-b border-slate-100 last:border-b-0 group">
+            <Avatar className="w-11 h-11 border-2 border-white shadow-sm">
+              <AvatarFallback className="bg-slate-100 text-slate-500 font-bold uppercase">
+                {member.user?.firstName?.[0]}{member.user?.lastName?.[0]}
+              </AvatarFallback>
+            </Avatar>
             <div className="flex-1">
-              <p className="text-[15px] font-bold text-slate-800">{member.name === 'You' ? 'You' : member.name}</p>
-              <p className="text-[13px] text-slate-500 font-medium mt-1">{member.email}</p>
+              <p className="text-[15px] font-bold text-slate-800">{member.user?.firstName} {member.user?.lastName}</p>
+              <p className="text-[13px] text-slate-500 font-medium mt-0.5">{member.user?.email}</p>
             </div>
-            <span className={cn('text-[12px] font-bold px-3 py-1 rounded border ', roleColors[member.role])}>
-              {member.role}
-            </span>
+
+            <div className="flex items-center gap-3">
+              {member.role === 'PRIMARY_ADMIN' ? (
+                <span className={cn('text-[10px] font-black px-3 py-1 rounded border uppercase tracking-widest', roleColors[member.role])}>
+                  PRIMARY ADMIN
+                </span>
+              ) : (
+                <select
+                  value={member.role}
+                  onChange={(e) => handleRoleChange(member.userId, e.target.value)}
+                  className={cn(
+                    'text-[10px] font-black px-3 py-1 rounded border uppercase tracking-widest bg-transparent cursor-pointer focus:outline-none focus:ring-1 focus:ring-blue-100',
+                    roleColors[member.role]
+                  )}
+                >
+                  <option value="ADMIN">ADMIN</option>
+                  <option value="BOOK_ADMIN">BOOK ADMIN</option>
+                  <option value="DATA_OPERATOR">DATA OPERATOR</option>
+                  <option value="VIEWER">VIEWER</option>
+                </select>
+              )}
+
+              {member.role !== 'PRIMARY_ADMIN' && (
+                <button
+                  onClick={() => handleRemoveMember(member.userId, `${member.user?.firstName} ${member.user?.lastName}`)}
+                  className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all opacity-0 group-hover:opacity-100"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              )}
+            </div>
           </div>
         ))}
       </div>
@@ -249,35 +333,93 @@ const MembersTab = ({ bookName, teamMembers, onOpenAddMember }: { bookName: stri
 };
 
 /* Entry Field Tab */
-const EntryFieldTab = ({ book, updateEntryFields }: { book: any; updateEntryFields: any }) => {
-  const fields = [
-    { key: 'contact', label: 'Contact field', desc: 'Rename, delete, reorder, add new or hide' },
-    { key: 'category', label: 'Category field', desc: 'Rename, delete, reorder, add new or hide', isNew: true },
-    { key: 'paymentMode', label: 'Payment Mode field', desc: 'Rename, delete, reorder, add new or hide', isNew: true },
-    { key: 'customFields', label: 'Custom fields', desc: 'Edit, delete and add new' },
+const EntryFieldTab = ({ workspaceId }: { workspaceId: string }) => {
+  const { categories, paymentModes, deleteCategory, deletePaymentMode, createCategory, createPaymentMode } = useMetadata(workspaceId);
+  const { contacts, deleteContact, createContact } = useContacts(workspaceId);
+
+  const [activeSection, setActiveSection] = useState<string | null>(null);
+
+  const sections = [
+    { id: 'categories', label: 'Categories', icon: Settings2, count: categories.length, items: categories },
+    { id: 'payment-modes', label: 'Payment Modes', icon: Calendar, count: paymentModes.length, items: paymentModes },
+    { id: 'contacts', label: 'Contacts', icon: UserCog, count: contacts.length, items: contacts },
   ];
 
+  const handleAdd = (sectionId: string) => {
+    const name = prompt(`Enter new ${sectionId.slice(0, -1)} name:`);
+    if (!name) return;
+
+    if (sectionId === 'categories') {
+      createCategory({ name, type: 'BOTH' });
+    } else if (sectionId === 'payment-modes') {
+      createPaymentMode({ name });
+    } else if (sectionId === 'contacts') {
+      createContact({ name });
+    }
+  };
+
+  const handleDelete = (sectionId: string, itemId: string) => {
+    if (!confirm('Are you sure you want to delete this item?')) return;
+
+    if (sectionId === 'categories') {
+      deleteCategory(itemId);
+    } else if (sectionId === 'payment-modes') {
+      deletePaymentMode(itemId);
+    } else if (sectionId === 'contacts') {
+      deleteContact(itemId);
+    }
+  };
+
   return (
-    <div className="max-w-3xl">
-      <h3 className="text-[12px] text-slate-400 font-semibold mb-2">Entry Field</h3>
-      <div className="space-y-4">
-        {fields.map((field) => (
-          <div key={field.key} className="bg-white border border-slate-200 rounded-lg p-6 flex items-center justify-between hover:border-blue-200 transition-colors ">
-            <div>
-              <p className="text-[15px] font-bold text-slate-800 flex items-center gap-2">
-                {field.label}
-                {field.isNew && (
-                  <span className="text-[10px] px-2 py-0.5 rounded bg-[#10b981] text-white font-bold uppercase tracking-[0.05em]">New</span>
-                )}
-              </p>
-              <p className="text-[13px] text-slate-500 font-medium mt-1">{field.desc}</p>
+    <div className="max-w-4xl space-y-6">
+      <div className="flex items-center justify-between mb-4">
+        <div>
+          <h3 className="text-[20px] font-bold text-slate-800">Entry Fields</h3>
+          <p className="text-[14px] text-slate-500 font-medium">Manage your categories, payment modes and contacts.</p>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        {sections.map((section) => (
+          <div key={section.id} className="bg-white border border-slate-200 rounded overflow-hidden flex flex-col">
+            <div className="p-5 border-b border-slate-50 bg-slate-50/50 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded bg-white flex items-center justify-center">
+                  <section.icon className="w-5 h-5 text-[#4361ee]" />
+                </div>
+                <div>
+                  <h4 className="text-[15px] font-bold text-slate-800">{section.label}</h4>
+                  <p className="text-[11px] text-slate-400 font-bold">{section.count} items</p>
+                </div>
+              </div>
+              <button
+                onClick={() => handleAdd(section.id)}
+                className="w-8 h-8   text-white flex items-center justify-center hover:opacity-90 transition-all"
+              >
+                <Plus className="w-5 h-5 text-[#4361ee]" />
+              </button>
             </div>
-            <span className={cn(
-              'text-[11px] font-black px-4 py-1.5 rounded transition-all w-14 text-center cursor-pointer',
-              book.entryFields[field.key as keyof typeof book.entryFields] ? 'text-[#4361ee] bg-[#eef2ff]' : 'text-slate-400 bg-slate-100'
-            )}>
-              {book.entryFields[field.key as keyof typeof book.entryFields] ? 'ON' : 'OFF'}
-            </span>
+
+            <div className="flex-1 max-h-[300px] overflow-y-auto p-3 space-y-1 scrollbar-thin scrollbar-thumb-slate-100">
+              {section.items.length > 0 ? (
+                section.items.map((item: any) => (
+                  <div key={item.id} className="flex items-center justify-between p-3 rounded hover:bg-slate-50 group transition-all border border-transparent hover:border-slate-100">
+                    <span className="text-[14px] font-bold text-slate-700 truncate">{item.name}</span>
+                    <button
+                      onClick={() => handleDelete(section.id, item.id)}
+                      className="p-1.5 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all opacity-0 group-hover:opacity-100"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                ))
+              ) : (
+                <div className="flex flex-col items-center justify-center py-10 text-slate-300">
+                  <section.icon className="w-10 h-10 mb-2 opacity-20" />
+                  <p className="text-xs font-bold">No items found</p>
+                </div>
+              )}
+            </div>
           </div>
         ))}
       </div>
@@ -286,8 +428,13 @@ const EntryFieldTab = ({ book, updateEntryFields }: { book: any; updateEntryFiel
 };
 
 /* Data Operator Role Tab */
-const DataOperatorTab = ({ book, updateDataOperatorRole }: { book: any; updateDataOperatorRole: any }) => {
-  const role = book.dataOperatorRole;
+const DataOperatorTab = ({ book, onUpdate }: { book: any; onUpdate: (data: any) => void }) => {
+  const role = {
+    backdatedEntries: book.allowBackdate ? 'always' : 'never',
+    entryEditPermission: true,
+    hideNetBalance: false,
+    hideEntriesByOthers: false
+  };
 
   return (
     <div className="max-w-3xl">
@@ -297,37 +444,36 @@ const DataOperatorTab = ({ book, updateDataOperatorRole }: { book: any; updateDa
       {/* Backdated entries */}
       <div className="mb-10">
         <div className="flex items-center gap-3 mb-5 px-1">
-          <div className="w-8 h-8 rounded-lg bg-blue-50 flex items-center justify-center border border-blue-100">
+          <div className="w-10 h-10 flex items-center justify-center">
             <Calendar className="w-5 h-5 text-[#4361ee]" />
           </div>
-          <span className="text-[15px] font-bold text-slate-800">Allow backdated entries</span>
+          <span className="text-[14px] font-semibold text-slate-800">Allow backdated entries</span>
         </div>
         <div className="space-y-3">
           {([
             { value: 'always', label: 'Always', desc: 'Can add entry on any past date' },
             { value: 'never', label: 'Never', desc: 'Cannot add entries on any past date' },
-            { value: 'one_day', label: 'One day before', desc: 'Can add entry on today and day before' },
           ] as const).map((option) => (
             <button
               key={option.value}
-              onClick={() => updateDataOperatorRole(book.id, { backdatedEntries: option.value })}
+              onClick={() => onUpdate({ allowBackdate: option.value === 'always' })}
               className={cn(
-                'w-full flex items-start gap-4 p-5 rounded-lg border transition-all duration-200 group',
+                'w-full flex items-start gap-4 p-5 rounded border transition-all duration-200 group',
                 role.backdatedEntries === option.value ? 'border-[#4361ee] bg-[#eef2ff]' : 'border-slate-200 bg-white hover:border-slate-300'
               )}
             >
               <div className={cn(
-                'w-5 h-5 rounded border-2 mt-0.5 flex items-center justify-center transition-colors',
+                'w-5 h-5 rounded-full border-2 mt-0.5 flex items-center justify-center transition-colors',
                 role.backdatedEntries === option.value ? 'border-[#4361ee] bg-[#4361ee]' : 'border-slate-300 bg-white'
               )}>
                 {role.backdatedEntries === option.value && (
-                  <div className="w-2.5 h-2.5 bg-white rounded-sm" />
+                  <div className="w-2.5 h-2.5 bg-white rounded-full" />
                 )}
               </div>
-              <div>
+              <div className="text-left">
                 <p className={cn(
                   "text-[15px] font-bold mb-1",
-                  role.backdatedEntries === option.value ? "text-slate-800" : "text-slate-700"
+                  role.backdatedEntries === option.value ? "text-[#4361ee]" : "text-slate-800"
                 )}>{option.label}</p>
                 <p className="text-[13px] text-slate-500 font-medium leading-relaxed">{option.desc}</p>
               </div>
@@ -345,7 +491,7 @@ const DataOperatorTab = ({ book, updateDataOperatorRole }: { book: any; updateDa
         ].map(({ key, icon: Icon, label, desc }) => (
           <div key={key} className="flex items-center justify-between group px-1">
             <div className="flex items-start gap-4">
-              <div className="w-8 h-8 rounded-lg bg-slate-50 flex items-center justify-center border border-slate-100 transition-colors group-hover:bg-slate-100">
+              <div className="w-10 h-10 rounded-xl bg-slate-50 flex items-center justify-center border border-slate-100 transition-colors group-hover:bg-slate-100 group-hover:border-slate-200">
                 <Icon className="w-5 h-5 text-slate-500" />
               </div>
               <div>
@@ -354,7 +500,7 @@ const DataOperatorTab = ({ book, updateDataOperatorRole }: { book: any; updateDa
               </div>
             </div>
             <button
-              onClick={() => updateDataOperatorRole(book.id, { [key]: !role[key as keyof typeof role] })}
+              onClick={() => { }}
               className={cn(
                 'w-11 h-6 rounded-full relative transition-all duration-300 focus:outline-none',
                 role[key as keyof typeof role] ? 'bg-[#4361ee]' : 'bg-slate-200'
